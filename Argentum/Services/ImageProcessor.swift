@@ -42,6 +42,24 @@ class ImageProcessor {
         return image.transformed(by: transform)
     }
 
+    // MARK: - Color Adjustments
+
+    func applyExposure(image: CIImage, exposure: Double) -> CIImage {
+        guard let filter = CIFilter(name: "CIExposureAdjust") else { return image }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(exposure, forKey: kCIInputEVKey)
+        return filter.outputImage ?? image
+    }
+
+    func applyColorControls(image: CIImage, brightness: Double, contrast: Double, saturation: Double) -> CIImage {
+        guard let filter = CIFilter(name: "CIColorControls") else { return image }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(brightness, forKey: kCIInputBrightnessKey)
+        filter.setValue(contrast, forKey: kCIInputContrastKey)
+        filter.setValue(saturation, forKey: kCIInputSaturationKey)
+        return filter.outputImage ?? image
+    }
+
     // MARK: - Export to JPEG
 
     func exportToJPEG(image: CIImage, to url: URL, quality: Double) throws {

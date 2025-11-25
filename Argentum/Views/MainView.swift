@@ -16,101 +16,36 @@ struct MainView: View {
 
     var body: some View {
         HSplitView {
-            // Left side - Canvas
-            VStack {
-                if document.processedImage != nil {
-                    ImageCanvas(image: document.processedImage)
-                } else {
-                    // Empty state
-                    VStack(spacing: 16) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 64))
-                            .foregroundColor(.secondary)
-                        Text("Open a TIFF file to start")
-                            .font(.headline)
-                        Button("Open File") {
-                            isFileImporterPresented = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                }
-            }
-            .frame(minWidth: 400)
+            // Viewer
+            ViewerArea(
+                image: document.processedImage,
+                onOpenFile: { isFileImporterPresented = true }
+            )
+            .frame(minWidth: Sizing.Panel.viewerMinWidth)
 
-            // Right side - Tools Panel
-            VStack(alignment: .leading, spacing: 20) {
-                if let fileName = document.fileName {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("File:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(fileName)
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(2)
-                    }
-
-                    Divider()
-                }
-
-                // Rotation controls
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Rotation")
-                        .font(.headline)
-
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            editingState.rotate90CounterClockwise()
-                            applyTransforms()
-                        }) {
-                            Image(systemName: "rotate.left")
-                        }
-
-                        Button(action: {
-                            editingState.rotate90Clockwise()
-                            applyTransforms()
-                        }) {
-                            Image(systemName: "rotate.right")
-                        }
-                    }
-
-                    Text("Angle: \(Int(editingState.rotationAngle))°")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Divider()
-
-                // JPEG Quality
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("JPEG Quality")
-                        .font(.headline)
-
-                    HStack {
-                        Text("Low")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Slider(value: $editingState.jpegQuality, in: 0.5...1.0)
-                        Text("High")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("\(Int(editingState.jpegQuality * 100))%")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                // Export button
-                Button("Export JPEG") {
-                    exportToJPEG()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(document.processedImage == nil)
-            }
-            .padding()
-            .frame(width: 250)
+            // Inspector
+            InspectorPanel(
+                fileName: document.fileName,
+                rotationAngle: $editingState.rotationAngle,
+                exposure: $editingState.exposure,
+                contrast: $editingState.contrast,
+                brightness: $editingState.brightness,
+                saturation: $editingState.saturation,
+                jpegQuality: $editingState.jpegQuality,
+                hasImage: document.processedImage != nil,
+                onRotateLeft: {
+                    editingState.rotate90CounterClockwise()
+                    applyTransforms()
+                },
+                onRotateRight: {
+                    editingState.rotate90Clockwise()
+                    applyTransforms()
+                },
+                onAdjustmentChanged: applyTransforms,
+                onCloseFile: closeFile,
+                onOpenFile: { isFileImporterPresented = true },
+                onExport: exportToJPEG
+            )
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -148,7 +83,32 @@ struct MainView: View {
             )
         }
 
+        // Apply exposure
+        if editingState.exposure != 0.0 {
+            processed = ImageProcessor.shared.applyExposure(
+                image: processed,
+                exposure: editingState.exposure
+            )
+        }
+
+        // Apply color controls (brightness, contrast, saturation)
+        if editingState.brightness != 0.0 || editingState.contrast != 1.0 || editingState.saturation != 1.0 {
+            processed = ImageProcessor.shared.applyColorControls(
+                image: processed,
+                brightness: editingState.brightness,
+                contrast: editingState.contrast,
+                saturation: editingState.saturation
+            )
+        }
+
         document.processedImage = processed
+    }
+
+    private func closeFile() {
+        document.originalImage = nil
+        document.processedImage = nil
+        document.fileURL = nil
+        editingState.reset()
     }
 
     private func exportToJPEG() {
