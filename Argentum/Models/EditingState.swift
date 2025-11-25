@@ -7,8 +7,44 @@
 
 import Foundation
 import Combine
+import CoreGraphics
+
+enum CropAspectRatio: Equatable {
+    case free
+    case original
+    case custom(width: Double, height: Double)
+
+    var displayName: String {
+        switch self {
+        case .free:
+            return "Free"
+        case .original:
+            return "Original"
+        case .custom(let w, let h):
+            return "\(Int(w)):\(Int(h))"
+        }
+    }
+
+    var ratio: CGFloat? {
+        switch self {
+        case .free:
+            return nil
+        case .original:
+            return nil // Will be determined by image
+        case .custom(let width, let height):
+            return CGFloat(width / height)
+        }
+    }
+}
 
 class EditingState: ObservableObject {
+    // Crop
+    @Published var isCropActive: Bool = false
+    @Published var cropRect: CGRect? = nil
+    @Published var cropAspectRatio: CropAspectRatio = .free
+    @Published var customAspectWidth: String = "16"
+    @Published var customAspectHeight: String = "9"
+
     // Transform
     @Published var rotationAngle: Double = 0.0
 
@@ -36,11 +72,27 @@ class EditingState: ObservableObject {
     }
 
     func reset() {
+        isCropActive = false
+        cropRect = nil
+        cropAspectRatio = .free
+        customAspectWidth = "16"
+        customAspectHeight = "9"
         rotationAngle = 0.0
         exposure = 0.0
         contrast = 1.0
         brightness = 0.0
         saturation = 1.0
         jpegQuality = 0.9
+    }
+
+    func applyCrop() {
+        // Apply the current crop rect and reset crop mode
+        isCropActive = false
+    }
+
+    func cancelCrop() {
+        // Cancel cropping without applying
+        isCropActive = false
+        cropRect = nil
     }
 }

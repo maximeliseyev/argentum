@@ -21,8 +21,10 @@ class ImageDocument: ObservableObject {
 
     func loadImage(from url: URL) {
         guard url.pathExtension.lowercased() == "tiff" ||
-              url.pathExtension.lowercased() == "tif" else {
-            print("Error: File is not a TIFF")
+              url.pathExtension.lowercased() == "tif"  ||
+              url.pathExtension.lowercased() == "jpeg" ||
+              url.pathExtension.lowercased() == "jpg" else {
+            print("Error: File is not a TIFF or JPEG image")
             return
         }
 

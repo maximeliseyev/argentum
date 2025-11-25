@@ -9,19 +9,18 @@ import SwiftUI
 
 struct InspectorPanel: View {
     let fileName: String?
-    @Binding var rotationAngle: Double
-    @Binding var exposure: Double
-    @Binding var contrast: Double
-    @Binding var brightness: Double
-    @Binding var saturation: Double
-    @Binding var jpegQuality: Double
+    @ObservedObject var editingState: EditingState
     let hasImage: Bool
     let onRotateLeft: () -> Void
     let onRotateRight: () -> Void
     let onAdjustmentChanged: () -> Void
+    let onApplyCrop: () -> Void
+    let onCancelCrop: () -> Void
     let onCloseFile: () -> Void
     let onOpenFile: () -> Void
     let onExport: () -> Void
+
+    @State private var debounceTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -35,28 +34,36 @@ struct InspectorPanel: View {
                     )
                 }
 
+                // Crop Section
+                CropSection(
+                    isCropActive: $editingState.isCropActive,
+                    aspectRatio: $editingState.cropAspectRatio,
+                    customWidth: $editingState.customAspectWidth,
+                    customHeight: $editingState.customAspectHeight
+                )
+
                 // Transform Section
                 TransformSection(
-                    rotationAngle: $rotationAngle,
+                    rotationAngle: $editingState.rotationAngle,
                     onRotateLeft: onRotateLeft,
                     onRotateRight: onRotateRight
                 )
 
                 // Adjustments Section
                 AdjustmentsSection(
-                    exposure: $exposure,
-                    contrast: $contrast,
-                    brightness: $brightness,
-                    saturation: $saturation
+                    exposure: $editingState.exposure,
+                    contrast: $editingState.contrast,
+                    brightness: $editingState.brightness,
+                    saturation: $editingState.saturation
                 )
-                .onChange(of: exposure) { _, _ in onAdjustmentChanged() }
-                .onChange(of: contrast) { _, _ in onAdjustmentChanged() }
-                .onChange(of: brightness) { _, _ in onAdjustmentChanged() }
-                .onChange(of: saturation) { _, _ in onAdjustmentChanged() }
+                .onChange(of: editingState.exposure) { _, _ in debouncedAdjustmentChanged() }
+                .onChange(of: editingState.contrast) { _, _ in debouncedAdjustmentChanged() }
+                .onChange(of: editingState.brightness) { _, _ in debouncedAdjustmentChanged() }
+                .onChange(of: editingState.saturation) { _, _ in debouncedAdjustmentChanged() }
 
                 // Export Section
                 ExportSection(
-                    jpegQuality: $jpegQuality,
+                    jpegQuality: $editingState.jpegQuality,
                     isEnabled: hasImage,
                     onExport: onExport
                 )
@@ -67,5 +74,22 @@ struct InspectorPanel: View {
         }
         .background(Color.panelBackground)
         .frame(width: Sizing.Panel.inspectorWidth)
+    }
+
+    private func debouncedAdjustmentChanged() {
+        // Cancel previous debounce task
+        debounceTask?.cancel()
+
+        // Create new debounce task with 150ms delay
+        debounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(150))
+
+            // Check if task was cancelled
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                onAdjustmentChanged()
+            }
+        }
     }
 }

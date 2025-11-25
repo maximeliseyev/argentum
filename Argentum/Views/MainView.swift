@@ -11,27 +11,53 @@ import UniformTypeIdentifiers
 struct MainView: View {
     @StateObject private var document = ImageDocument()
     @StateObject private var editingState = EditingState()
-    @State private var isFileImporterPresented = false
-    @State private var isExporting = false
+    @StateObject private var fileManagerService = FileManagerService()
+
+    @State private var selectedFile: URL?
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
-        HSplitView {
-            // Viewer
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            // SIDEBAR - File Browser
+            SidebarView(
+                selectedFile: $selectedFile,
+                fileManager: fileManagerService
+            )
+            .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 350)
+
+        } content: {
+            // CANVAS - Image Viewer
             ViewerArea(
                 image: document.processedImage,
-                onOpenFile: { isFileImporterPresented = true }
+                originalImage: document.originalImage,
+                editingState: editingState,
+                onOpenFile: openFileImporter,
+                onApplyCrop: applyCrop,
+                onCancelCrop: cancelCrop,
+                onFileDrop: { url in
+                    selectedFile = url
+                }
             )
-            .frame(minWidth: Sizing.Panel.viewerMinWidth)
+            .navigationSplitViewColumnWidth(min: 400, ideal: 800)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: toggleSidebar) {
+                        Label("Toggle Sidebar", systemImage: "sidebar.left")
+                    }
+                }
 
-            // Inspector
+                ToolbarItem(placement: .automatic) {
+                    Button(action: toggleInspector) {
+                        Label("Toggle Inspector", systemImage: "sidebar.right")
+                    }
+                }
+            }
+
+        } detail: {
+            // INSPECTOR - Editing Controls
             InspectorPanel(
                 fileName: document.fileName,
-                rotationAngle: $editingState.rotationAngle,
-                exposure: $editingState.exposure,
-                contrast: $editingState.contrast,
-                brightness: $editingState.brightness,
-                saturation: $editingState.saturation,
-                jpegQuality: $editingState.jpegQuality,
+                editingState: editingState,
                 hasImage: document.processedImage != nil,
                 onRotateLeft: {
                     editingState.rotate90CounterClockwise()
@@ -42,74 +68,97 @@ struct MainView: View {
                     applyTransforms()
                 },
                 onAdjustmentChanged: applyTransforms,
+                onApplyCrop: applyCrop,
+                onCancelCrop: cancelCrop,
                 onCloseFile: closeFile,
-                onOpenFile: { isFileImporterPresented = true },
+                onOpenFile: openFileImporter,
                 onExport: exportToJPEG
             )
+            .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 350)
         }
-        .fileImporter(
-            isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.tiff],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let files):
-                if let url = files.first {
-                    document.loadImage(from: url)
-                }
-            case .failure(let error):
-                print("Error selecting file: \(error)")
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: { isFileImporterPresented = true }) {
-                    Label("Open", systemImage: "folder")
-                }
+        .navigationSplitViewStyle(.balanced)
+        .onChange(of: selectedFile) { _, newFile in
+            if let url = newFile {
+                loadFile(url)
             }
         }
     }
 
-    private func applyTransforms() {
-        guard let original = document.originalImage else { return }
+    // MARK: - File Operations
 
-        var processed = original
+    private func loadFile(_ url: URL) {
+        document.loadImage(from: url)
+        fileManagerService.addToRecent(url)
+        editingState.reset()
+    }
 
-        // Apply rotation
-        if editingState.rotationAngle != 0 {
-            processed = ImageProcessor.shared.rotate(
-                image: processed,
-                angle: editingState.rotationAngle
-            )
+    private func openFileImporter() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.tiff, .jpeg]
+        panel.allowsMultipleSelection = false
+        panel.message = "Select an image to edit"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            selectedFile = url
         }
-
-        // Apply exposure
-        if editingState.exposure != 0.0 {
-            processed = ImageProcessor.shared.applyExposure(
-                image: processed,
-                exposure: editingState.exposure
-            )
-        }
-
-        // Apply color controls (brightness, contrast, saturation)
-        if editingState.brightness != 0.0 || editingState.contrast != 1.0 || editingState.saturation != 1.0 {
-            processed = ImageProcessor.shared.applyColorControls(
-                image: processed,
-                brightness: editingState.brightness,
-                contrast: editingState.contrast,
-                saturation: editingState.saturation
-            )
-        }
-
-        document.processedImage = processed
     }
 
     private func closeFile() {
         document.originalImage = nil
         document.processedImage = nil
         document.fileURL = nil
+        selectedFile = nil
         editingState.reset()
     }
+
+    // MARK: - UI Controls
+
+    private func toggleSidebar() {
+        withAnimation {
+            if columnVisibility == .detailOnly {
+                // Currently sidebar is hidden, show it
+                columnVisibility = .all
+            } else {
+                // Hide sidebar (show only content + inspector)
+                columnVisibility = .detailOnly
+            }
+        }
+    }
+
+    private func toggleInspector() {
+        withAnimation {
+            if columnVisibility == .doubleColumn {
+                // Currently inspector is hidden, show it
+                columnVisibility = .all
+            } else {
+                // Hide inspector (show only sidebar + content)
+                columnVisibility = .doubleColumn
+            }
+        }
+    }
+
+    // MARK: - Image Processing
+
+    private func applyTransforms() {
+        guard let original = document.originalImage else { return }
+
+        // Apply all edits using the centralized pipeline
+        document.processedImage = ImageProcessor.shared.applyAllEdits(
+            to: original,
+            editingState: editingState
+        )
+    }
+
+    private func applyCrop() {
+        editingState.applyCrop()
+        applyTransforms()
+    }
+
+    private func cancelCrop() {
+        editingState.cancelCrop()
+    }
+
+    // MARK: - Export
 
     private func exportToJPEG() {
         guard let image = document.processedImage else { return }

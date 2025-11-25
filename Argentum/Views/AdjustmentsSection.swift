@@ -28,7 +28,7 @@ struct AdjustmentsSection: View {
                 AdjustmentSlider(
                     label: "Contrast",
                     value: $contrast,
-                    range: 0.7...1.3,
+                    range: 0.8...1.2,
                     defaultValue: 1.0
                 )
 
@@ -44,7 +44,7 @@ struct AdjustmentsSection: View {
                 AdjustmentSlider(
                     label: "Saturation",
                     value: $saturation,
-                    range: 0.7...1.3,
+                    range: 0.0...2.0,
                     defaultValue: 1.0
                 )
             }

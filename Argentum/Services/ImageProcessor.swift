@@ -23,6 +23,12 @@ class ImageProcessor {
         ])
     }
 
+    // MARK: - Crop
+
+    func crop(image: CIImage, rect: CGRect) -> CIImage {
+        return image.cropped(to: rect)
+    }
+
     // MARK: - Rotation
 
     func rotate(image: CIImage, angle: Double) -> CIImage {
@@ -109,9 +115,53 @@ class ImageProcessor {
         }
     }
 
-    // MARK: - Preview Generation
+    // MARK: - Apply All Edits Pipeline
 
-    func generatePreview(from image: CIImage, maxSize: CGFloat = 1024) -> NSImage? {
+    func applyAllEdits(to image: CIImage, editingState: EditingState) -> CIImage {
+        var result = image
+
+        // 1. Apply rotation first (affects coordinate space)
+        if editingState.rotationAngle != 0 {
+            result = rotate(image: result, angle: editingState.rotationAngle)
+        }
+
+        // 2. Apply crop (after rotation so crop rect is in rotated space)
+        if let cropRect = editingState.cropRect {
+            result = crop(image: result, rect: cropRect)
+        }
+
+        // 3. Apply color adjustments (order doesn't matter much here)
+        if editingState.exposure != 0 {
+            result = applyExposure(image: result, exposure: editingState.exposure)
+        }
+
+        if editingState.brightness != 0 || editingState.contrast != 1.0 || editingState.saturation != 1.0 {
+            result = applyColorControls(
+                image: result,
+                brightness: editingState.brightness,
+                contrast: editingState.contrast,
+                saturation: editingState.saturation
+            )
+        }
+
+        return result
+    }
+
+    // MARK: - Thumbnail & Preview Generation
+
+    nonisolated func generateThumbnail(from image: CIImage, size: CGFloat = 32) -> NSImage? {
+        let extent = image.extent
+        let scale = size / max(extent.width, extent.height)
+        let scaledImage = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+            return nil
+        }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: scaledImage.extent.width, height: scaledImage.extent.height))
+    }
+
+    nonisolated func generatePreview(from image: CIImage, maxSize: CGFloat = 1024) -> NSImage? {
         let extent = image.extent
         let aspectRatio = extent.width / extent.height
 
@@ -133,5 +183,11 @@ class ImageProcessor {
         }
 
         return NSImage(cgImage: cgImage, size: NSSize(width: targetWidth, height: targetHeight))
+    }
+
+    nonisolated func generatePreviewAsync(from image: CIImage, maxSize: CGFloat = 1024) async -> NSImage? {
+        await Task.detached(priority: .userInitiated) {
+            return self.generatePreview(from: image, maxSize: maxSize)
+        }.value
     }
 }
